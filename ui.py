@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+from ctypes import wintypes
 from tkinter import colorchooser, messagebox
 from typing import Callable
 
@@ -179,11 +181,26 @@ class QuotaWidget(ctk.CTk):
 
     def set_mode(self) -> None:
         if self.config.ui_mode == "docked":
+            work_left, work_top, work_right, work_bottom = self._work_area()
+            width, height = (470, 178) if self.expanded else (330, 74)
             self.geometry(f"{470 if self.expanded else 330}x{178 if self.expanded else 74}+"
-                          f"{self.winfo_screenwidth() - (490 if self.expanded else 350)}+"
-                          f"{self.winfo_screenheight() - (120 if self.expanded else 95)}")
+                          f"{work_right - width - 10}+{work_bottom - height - 6}")
         else:
             self.geometry("470x178" if self.expanded else "330x74")
+
+    @staticmethod
+    def _work_area() -> tuple[int, int, int, int]:
+        """Return the current monitor work area, excluding the Windows taskbar."""
+        try:
+            user32 = ctypes.windll.user32
+            monitor = user32.MonitorFromPoint(wintypes.POINT(0, 0), 2)
+            info = wintypes.MONITORINFO()
+            info.cbSize = ctypes.sizeof(info)
+            user32.GetMonitorInfoW(monitor, ctypes.byref(info))
+            rect = info.rcWork
+            return rect.left, rect.top, rect.right, rect.bottom
+        except (AttributeError, OSError):
+            return 0, 0, 1920, 1040
 
     def toggle_mode(self) -> None:
         self.config.ui_mode = "floating" if self.config.ui_mode == "docked" else "docked"
