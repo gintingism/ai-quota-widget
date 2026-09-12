@@ -30,6 +30,22 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
+Saat startup, aplikasi otomatis mencoba mengambil token GitHub dari `gh auth token`,
+lalu fallback ke `%LOCALAPPDATA%\github-copilot\hosts.json`. Token hanya disimpan
+ke `%APPDATA%\AIQuotaWidget\config.json` dan tidak pernah dicetak. Untuk menjalankan
+deteksi sekali jalan tanpa membuka widget:
+
+```powershell
+python auto_configure_github.py
+```
+
+Script tidak menimpa token yang sudah ada. Untuk mengambil ulang secara eksplisit,
+jalankan dari Python:
+
+```powershell
+python -c "from config_manager import ConfigManager; ConfigManager().auto_configure_github_token(force=True)"
+```
+
 Salin `config.example.json` menjadi `config.json` hanya jika ingin menyiapkan nilai awal manual. Masukkan token melalui Settings. Konfigurasi flat lama (`quota_endpoint`, `session_token`, `cookies`, dan `poll_interval_seconds`) dimigrasikan otomatis ke `antigravity` saat dibaca. Secara default file aktif dibuat otomatis di `%APPDATA%\AIQuotaWidget`. Token disimpan lokal dalam file JSON; jangan membagikan file tersebut.
 
 ## Build executable Windows (opsional)

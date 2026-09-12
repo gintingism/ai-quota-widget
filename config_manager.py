@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from github_auth import detect_github_token
+
 
 APP_DIR = Path(os.getenv("APPDATA", Path.home())) / "AIQuotaWidget"
 CONFIG_PATH = APP_DIR / "config.json"
@@ -84,6 +86,19 @@ class ConfigManager:
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
+
+    def auto_configure_github_token(self, force: bool = False) -> str | None:
+        """Detect a local GitHub token and persist it without ever printing it."""
+        config = self.load()
+        if config.github_copilot.github_token and not force:
+            return config.github_copilot.github_token
+        token, _source = detect_github_token()
+        if not token:
+            return None
+        config.github_copilot.github_token = token
+        config.github_copilot.enabled = True
+        self.save(config)
+        return token
 
     @staticmethod
     def _apply_values(config: AppConfig, values: dict[str, Any]) -> None:

@@ -10,6 +10,8 @@ from ui import QuotaWidget
 def main() -> None:
     manager = ConfigManager()
     config = manager.load()
+    if not config.github_copilot.github_token:
+        manager.auto_configure_github_token()
     app: QuotaWidget | None = None
     tray: TrayIcon | None = None
 
