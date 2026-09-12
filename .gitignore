@@ -6,3 +6,4 @@ config.json
 dist/
 build/
 *.spec
+ai_quota_widget.ico

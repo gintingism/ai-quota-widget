@@ -16,6 +16,8 @@ Widget desktop ringan untuk memantau rolling quota **5 jam** dan weekly reset me
 - Docked mode aligns to the Windows work area above the taskbar; clicking the
   summary expands model details. Right-clicking the widget opens settings.
 - Posisi, warna aksen, preferensi Always on Top, dan timer tersimpan di `%APPDATA%\AIQuotaWidget\config.json`.
+- Fluent/glass-style dark UI dengan progress pill berwarna dinamis, status dot,
+  panel detail dua kartu, tombol Refresh/Settings, dan resize expand yang halus.
 - Timer memakai Unix timestamp sehingga tetap benar setelah sleep/hibernasi.
 
 ## Menjalankan dari source
@@ -33,8 +35,11 @@ Salin `config.example.json` menjadi `config.json` hanya jika ingin menyiapkan ni
 ## Build executable Windows (opsional)
 
 ```powershell
-python -m pip install pyinstaller
-pyinstaller --noconsole --onefile --name AIQuotaWidget main.py
+python -m pip install -r requirements.txt
+python build.py
 ```
 
-Executable berada di `dist\AIQuotaWidget.exe`.
+`build.py` membuat icon `ai_quota_widget.ico`, mengaktifkan `--onefile`,
+`--noconsole`, `--collect-all customtkinter`, dan menghasilkan
+`dist\AIQuotaWidget.exe`. Konfigurasi runtime tetap ditulis ke
+`%APPDATA%\AIQuotaWidget\config.json`, bukan ke folder bundle sementara.
