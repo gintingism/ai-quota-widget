@@ -1,0 +1,22 @@
+{
+  "theme": "dark",
+  "accent_color": "#7C3AED",
+  "text_color": "#F9FAFB",
+  "background_color": "#111827",
+  "window_alpha": 0.94,
+  "always_on_top": true,
+  "window_x": null,
+  "window_y": null,
+  "weekly_reset_weekday": 0,
+  "weekly_reset_hour": 0,
+  "weekly_reset_minute": 0,
+  "weekly_reset_timezone": "local",
+  "rolling_reset_at": null,
+  "weekly_reset_override": null,
+  "ui_mode": "docked",
+  "quota_endpoint": "https://your-status-endpoint.example/api/quota",
+  "bearer_token": "",
+  "session_token": "",
+  "cookies": "",
+  "poll_interval_seconds": 600
+}
