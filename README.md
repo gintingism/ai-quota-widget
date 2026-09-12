@@ -12,7 +12,10 @@ Widget desktop ringan untuk memantau rolling quota **5 jam** dan weekly reset me
   independent credentials, intervals, parsing, and offline fallback.
 - Antigravity accepts a user-configured endpoint, session token, and cookies.
   GitHub Copilot accepts a GitHub token and sends `Editor-Version` to the
-  configured Copilot endpoint. Internal GitHub response shapes may change.
+  configured Copilot endpoint. Jika endpoint internal mengembalikan 404,
+  aplikasi memvalidasi token melalui `https://api.github.com/user` dan
+  menampilkan akun online dengan quota `--%` karena GitHub tidak memberikan
+  metrik quota publik pada endpoint tersebut.
 - Docked mode aligns to the Windows work area above the taskbar; clicking the
   summary expands model details. Right-clicking the widget opens settings.
 - Posisi, warna aksen, preferensi Always on Top, dan timer tersimpan di `%APPDATA%\AIQuotaWidget\config.json`.

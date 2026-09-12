@@ -225,10 +225,31 @@ class QuotaFetcher:
             if response.status_code == 429:
                 reset = _epoch(response.headers.get("X-RateLimit-Reset"))
                 return ProviderSnapshot("github_copilot", reset_at=reset, error="GitHub API rate limit")
+            if response.status_code == 404:
+                # The internal Copilot endpoint is not available for every
+                # account/API deployment. Verify the token through the stable
+                # public identity endpoint rather than reporting offline.
+                response = self._request("https://api.github.com/user", headers)
+                if response.status_code == 401:
+                    return ProviderSnapshot("github_copilot", error="401 Unauthorized: GitHub token invalid")
+                response.raise_for_status()
+                return self._parse_copilot_identity(response.json())
             response.raise_for_status()
             return self._parse_copilot(response.json(), response.headers)
         except (requests.RequestException, ValueError, json.JSONDecodeError, TypeError) as exc:
             return ProviderSnapshot("github_copilot", error=str(exc)[:160])
+
+    @staticmethod
+    def _parse_copilot_identity(payload: Any) -> ProviderSnapshot:
+        data = payload if isinstance(payload, dict) else {}
+        login = str(_first(data, "login", "name") or "GitHub account")
+        return ProviderSnapshot(
+            provider="github_copilot",
+            plan_tier="GitHub account",
+            account_status=f"Connected as {login}; quota endpoint unavailable",
+            fetched_at=time.time(),
+            source="remote",
+        )
 
     def _parse_copilot(self, payload: Any, headers: dict[str, str]) -> ProviderSnapshot:
         data = payload.get("data", payload) if isinstance(payload, dict) else {}
