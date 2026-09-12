@@ -17,9 +17,9 @@ from timer_engine import TimerEngine
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 COLORS = {
-    "surface": "#1E1E24",
-    "surface_raised": "#25252E",
-    "border": "#343440",
+    "surface": "#121214",
+    "surface_raised": "#18181B",
+    "border": "#27272A",
     "muted": "#A1A1AA",
     "text": "#F4F4F5",
     "green": "#4ADE80",
@@ -45,7 +45,7 @@ class SettingsWindow(ctk.CTkToplevel):
         super().__init__(parent)
         self.config, self.on_save = config, on_save
         self.title("AI Quota Settings")
-        self.geometry("450x670")
+        self.geometry("520x800")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -68,26 +68,35 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkCheckBox(frame, text="Enable Antigravity",
                         variable=self.antigravity_enabled).pack(anchor="w", padx=8, pady=(12, 3))
         self.ag_endpoint = self._field(frame, "Antigravity endpoint URL",
-                                       self.config.antigravity.endpoint_url)
+                                       self.config.antigravity.endpoint_url, False,
+                                       "https://host.example/api/quota")
         self.ag_token = self._field(frame, "Antigravity session token",
-                                    self.config.antigravity.session_token, True)
+                                    self.config.antigravity.session_token, True,
+                                    "Paste session token…")
         self.ag_cookies = self._field(frame, "Antigravity cookies: name=value; name2=value2",
-                                      self.config.antigravity.cookies, True)
+                                      self.config.antigravity.cookies, True,
+                                      "session_id=…; other_cookie=…")
         self.ag_interval = self._field(frame, "Antigravity refresh interval (60-3600 sec)",
-                                       str(self.config.antigravity.refresh_interval_sec))
+                                       str(self.config.antigravity.refresh_interval_sec), False,
+                                       "600")
         self.copilot_enabled = ctk.BooleanVar(value=self.config.github_copilot.enabled)
         ctk.CTkCheckBox(frame, text="Enable GitHub Copilot",
                         variable=self.copilot_enabled).pack(anchor="w", padx=8, pady=(12, 3))
         self.gh_token = self._field(frame, "GitHub token",
-                                    self.config.github_copilot.github_token, True)
+                                    self.config.github_copilot.github_token, True,
+                                    "ghp_… or github_pat_…")
         self.gh_endpoint = self._field(frame, "GitHub Copilot endpoint",
-                                       self.config.github_copilot.endpoint_url)
+                                       self.config.github_copilot.endpoint_url, False,
+                                       "https://api.github.com/…")
         self.gh_editor = self._field(frame, "Editor-Version header",
-                                     self.config.github_copilot.editor_version)
+                                     self.config.github_copilot.editor_version, False,
+                                     "vscode/1.99.0")
         self.gh_interval = self._field(frame, "GitHub refresh interval (60-3600 sec)",
-                                       str(self.config.github_copilot.refresh_interval_sec))
+                                       str(self.config.github_copilot.refresh_interval_sec), False,
+                                       "300")
         self.reset_time = self._field(frame, "Fallback weekly reset time (HH:MM)",
-                                      f"{self.config.weekly_reset_hour:02d}:{self.config.weekly_reset_minute:02d}")
+                                      f"{self.config.weekly_reset_hour:02d}:{self.config.weekly_reset_minute:02d}",
+                                      False, "00:00")
         ctk.CTkLabel(frame, text="Fallback weekly reset day").pack(anchor="w", padx=8, pady=(10, 3))
         self.weekday = ctk.CTkComboBox(frame, values=WEEKDAYS)
         self.weekday.set(WEEKDAYS[self.config.weekly_reset_weekday])
@@ -97,15 +106,18 @@ class SettingsWindow(ctk.CTkToplevel):
                         variable=self.always_top).pack(anchor="w", padx=8, pady=10)
         ctk.CTkButton(frame, text="Choose accent color",
                       command=self.choose_color).pack(fill="x", padx=8, pady=4)
-        ctk.CTkButton(frame, text="Save settings", command=self.save).pack(
-            fill="x", padx=8, pady=16
+        ctk.CTkButton(self, text="Save & Apply", height=38, command=self.save).pack(
+            fill="x", padx=16, pady=(8, 16)
         )
 
     @staticmethod
-    def _field(parent, label: str, value: str, secret: bool = False) -> ctk.CTkEntry:
+    def _field(parent, label: str, value: str, secret: bool = False,
+               placeholder: str = "") -> ctk.CTkEntry:
         ctk.CTkLabel(parent, text=label).pack(anchor="w", padx=8, pady=(8, 3))
-        field = ctk.CTkEntry(parent, show="*" if secret else "")
-        field.insert(0, value)
+        field = ctk.CTkEntry(parent, show="*" if secret else "",
+                             placeholder_text=placeholder)
+        if value:
+            field.insert(0, value)
         field.pack(fill="x", padx=8)
         return field
 
@@ -150,7 +162,7 @@ class QuotaWidget(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
         self.title("AI Quota")
         self.overrideredirect(True)
-        self.attributes("-alpha", config.window_alpha)
+        self.attributes("-alpha", max(0.95, config.window_alpha))
         self.attributes("-topmost", config.always_on_top)
         self.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
         self.engine = TimerEngine(config.rolling_reset_at, config.weekly_reset_override,
@@ -189,9 +201,9 @@ class QuotaWidget(ctk.CTk):
     def _build(self) -> None:
         self.card = ctk.CTkFrame(self, corner_radius=18, fg_color=COLORS["surface"],
                                  border_width=1, border_color=COLORS["border"])
-        self.card.pack(fill="both", expand=True)
+        self.card.pack(fill="both", expand=True, padx=2, pady=2)
         self.header = ctk.CTkFrame(self.card, fg_color="transparent")
-        self.header.pack(fill="x", padx=14, pady=(9, 0))
+        self.header.pack(fill="x", padx=16, pady=(12, 0))
         ctk.CTkLabel(self.header, text="AI QUOTA", text_color=self.config.accent_color,
                      font=ctk.CTkFont("Segoe UI", 11, "bold")).pack(side="left")
         self.status_dot = ctk.CTkLabel(self.header, text="●", text_color=COLORS["muted"],
@@ -203,22 +215,22 @@ class QuotaWidget(ctk.CTk):
         self.refresh_button = ctk.CTkButton(self.header, text="↻", width=28, height=24,
                                             fg_color="transparent", hover_color=COLORS["border"],
                                             text_color=COLORS["text"], command=self.refresh_now)
-        self.refresh_button.pack(side="right", padx=(3, 0))
+        self.refresh_button.pack(side="right", padx=(6, 0))
         self.settings_button = ctk.CTkButton(self.header, text="⚙", width=28, height=24,
                                              fg_color="transparent", hover_color=COLORS["border"],
                                              text_color=COLORS["text"], command=self.open_settings)
-        self.settings_button.pack(side="right")
+        self.settings_button.pack(side="right", padx=(6, 0))
         self.close_button = ctk.CTkButton(self.header, text="×", width=28, height=24,
                                           fg_color="transparent", hover_color=COLORS["border"],
                                           text_color=COLORS["muted"], command=self.hide_to_tray)
         self.close_button.pack(side="right")
         self.summary_frame = ctk.CTkFrame(self.card, fg_color="transparent")
-        self.summary_frame.pack(fill="x", padx=14, pady=(7, 0))
+        self.summary_frame.pack(fill="x", padx=16, pady=(10, 0))
         self.ag_summary = self._summary_row(self.summary_frame, "Antigravity")
         self.gh_summary = self._summary_row(self.summary_frame, "Copilot")
         self.reset = ctk.CTkLabel(self.card, text="Nearest reset  •  --",
                                   text_color=COLORS["muted"], font=ctk.CTkFont("Segoe UI", 10))
-        self.reset.pack(pady=(4, 8))
+        self.reset.pack(pady=(6, 12))
         self.details = ctk.CTkFrame(self.card, fg_color="transparent")
         self.ag_card = self._provider_card(self.details, "GOOGLE ANTIGRAVITY")
         self.gh_card = self._provider_card(self.details, "GITHUB COPILOT")
@@ -249,7 +261,8 @@ class QuotaWidget(ctk.CTk):
                                font=ctk.CTkFont("Segoe UI", 10, "bold"))
         heading.pack(anchor="w", padx=12, pady=(10, 4))
         body = ctk.CTkLabel(card, text="Waiting for sync…", justify="left", anchor="w",
-                            text_color=COLORS["text"], font=ctk.CTkFont("Segoe UI", 10))
+                            text_color=COLORS["text"], wraplength=175,
+                            font=ctk.CTkFont("Segoe UI", 10))
         body.pack(fill="x", padx=12, pady=(0, 10))
         return {"card": card, "heading": heading, "body": body}
 
@@ -318,8 +331,8 @@ class QuotaWidget(ctk.CTk):
     def toggle_expand(self) -> None:
         self.expanded = not self.expanded
         if self.expanded:
-            self.details.pack(fill="both", expand=True, padx=14, pady=(0, 5))
-            self.action.pack(fill="x", padx=34, pady=(3, 9))
+            self.details.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+            self.action.pack(fill="x", padx=32, pady=(3, 12))
         else:
             self.details.pack_forget()
             self.action.pack_forget()
@@ -331,8 +344,8 @@ class QuotaWidget(ctk.CTk):
         self._resize_step(0)
 
     def _resize_step(self, step: int) -> None:
-        target_width, target_height = (500, 248) if self.expanded else (350, 86)
-        start_width, start_height = (350, 86) if self.expanded else (500, 248)
+        target_width, target_height = (420, 300) if self.expanded else (420, 118)
+        start_width, start_height = (420, 118) if self.expanded else (420, 300)
         progress = min(1.0, (step + 1) / 5)
         width = round(start_width + (target_width - start_width) * progress)
         height = round(start_height + (target_height - start_height) * progress)
@@ -341,7 +354,7 @@ class QuotaWidget(ctk.CTk):
             self._resize_job = self.after(24, self._resize_step, step + 1)
 
     def set_mode(self) -> None:
-        self._set_geometry(500 if self.expanded else 350, 248 if self.expanded else 86)
+        self._set_geometry(420, 300 if self.expanded else 118)
 
     def _set_geometry(self, width: int, height: int) -> None:
         if self.config.ui_mode == "docked":
