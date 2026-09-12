@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import tkinter as tk
 import time
 from ctypes import wintypes
 from datetime import datetime
@@ -130,9 +131,8 @@ class QuotaWidget(ctk.CTk):
                                   config.weekly_reset_minute)
         self.expanded = False
         self.last_state = AggregatedQuotaState()
-        self.fetcher = QuotaFetcher(
-            config, lambda state: self.after(0, self.apply_state, state)
-        )
+        self._fetcher_generation = 0
+        self.fetcher = self._new_fetcher()
         self._drag_start: tuple[int, int] | None = None
         self._build()
         self.set_mode()
@@ -141,6 +141,25 @@ class QuotaWidget(ctk.CTk):
         self.bind("<Button-3>", lambda _event: self.open_settings())
         self.after(250, self._tick)
         self.fetcher.start()
+
+    def _new_fetcher(self) -> QuotaFetcher:
+        generation = self._fetcher_generation
+        return QuotaFetcher(
+            self.config,
+            lambda state: self._enqueue_state(generation, state),
+        )
+
+    def _enqueue_state(self, generation: int, state: AggregatedQuotaState) -> None:
+        if generation != self._fetcher_generation:
+            return
+        try:
+            self.after(0, self._apply_if_current, generation, state)
+        except tk.TclError:
+            pass
+
+    def _apply_if_current(self, generation: int, state: AggregatedQuotaState) -> None:
+        if generation == self._fetcher_generation:
+            self.apply_state(state)
 
     def _build(self) -> None:
         self.card = ctk.CTkFrame(self, corner_radius=12,
@@ -307,9 +326,8 @@ class QuotaWidget(ctk.CTk):
 
     def _settings_saved(self) -> None:
         self.fetcher.stop()
-        self.fetcher = QuotaFetcher(
-            self.config, lambda state: self.after(0, self.apply_state, state)
-        )
+        self._fetcher_generation += 1
+        self.fetcher = self._new_fetcher()
         self.fetcher.start()
         self.attributes("-topmost", self.config.always_on_top)
         self.manager.save(self.config)

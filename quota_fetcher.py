@@ -102,6 +102,7 @@ class QuotaFetcher:
         self._thread: threading.Thread | None = None
         self._state_lock = threading.Lock()
         self._state: dict[str, ProviderSnapshot] = {}
+        self._next_due = {"antigravity": 0.0, "github_copilot": 0.0}
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -114,29 +115,35 @@ class QuotaFetcher:
         self._stop.set()
 
     def refresh_now(self) -> None:
-        threading.Thread(target=self._fetch_all, name="quota-refresh", daemon=True).start()
+        threading.Thread(target=lambda: self._fetch_all(force=True),
+                         name="quota-refresh", daemon=True).start()
 
     def _run(self) -> None:
         while not self._stop.is_set():
             self._fetch_all()
-            intervals = [
-                provider.refresh_interval_sec
-                for provider, enabled in (
-                    (self.config.antigravity, self.config.antigravity.enabled),
-                    (self.config.github_copilot, self.config.github_copilot.enabled),
-                ) if enabled
-            ]
-            self._stop.wait(min(intervals or [600]))
+            now = time.monotonic()
+            due = [deadline - now for deadline in self._next_due.values()
+                   if deadline > now]
+            self._stop.wait(min(due or [1.0]))
 
-    def _fetch_all(self) -> None:
+    def _fetch_all(self, force: bool = False) -> None:
         if not self._refresh_lock.acquire(blocking=False):
             return
         try:
+            now = time.monotonic()
+            enabled = {
+                "antigravity": self.config.antigravity.enabled,
+                "github_copilot": self.config.github_copilot.enabled,
+            }
             with ThreadPoolExecutor(max_workers=2, thread_name_prefix="quota-provider") as pool:
                 futures = {}
-                if self.config.antigravity.enabled:
+                if enabled["antigravity"] and (
+                    force or now >= self._next_due["antigravity"]
+                ):
                     futures["antigravity"] = pool.submit(self._fetch_antigravity)
-                if self.config.github_copilot.enabled:
+                if enabled["github_copilot"] and (
+                    force or now >= self._next_due["github_copilot"]
+                ):
                     futures["github_copilot"] = pool.submit(self._fetch_github_copilot)
                 for provider, future in futures.items():
                     try:
@@ -145,6 +152,12 @@ class QuotaFetcher:
                         snapshot = ProviderSnapshot(provider, error=f"Fetcher error: {str(exc)[:120]}")
                     with self._state_lock:
                         self._state[provider] = snapshot
+                    interval = (
+                        self.config.antigravity.refresh_interval_sec
+                        if provider == "antigravity"
+                        else self.config.github_copilot.refresh_interval_sec
+                    )
+                    self._next_due[provider] = time.monotonic() + interval
             with self._state_lock:
                 state = AggregatedQuotaState(dict(self._state), time.time())
             self.on_result(state)

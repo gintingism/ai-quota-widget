@@ -111,7 +111,7 @@ class ConfigManager:
             )
             config.antigravity.endpoint_url = str(values.get("quota_endpoint", "") or "")
             config.antigravity.session_token = str(
-                values.get("session_token") or values.get("bearer_token") or ""
+                values.get("bearer_token") or values.get("session_token") or ""
             )
             config.antigravity.cookies = str(values.get("cookies", "") or "")
             config.antigravity.refresh_interval_sec = int(values.get("poll_interval_seconds", 600) or 600)
