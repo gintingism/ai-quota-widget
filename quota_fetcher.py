@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from config_manager import AppConfig, AntigravityConfig, GitHubCopilotConfig
+from config_manager import AppConfig
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ def _epoch(value: Any) -> float | None:
     return None
 
 
-def _percent(value: Any) -> float | None:
+def _remaining_percent(value: Any) -> float | None:
     if isinstance(value, dict):
         used = _first(value, "used", "consumed")
         limit = _first(value, "limit", "total", "allowed")
@@ -75,32 +75,35 @@ def _percent(value: Any) -> float | None:
                 return max(0.0, min(100.0, 100.0 * (1 - float(used) / float(limit))))
             except (TypeError, ValueError, ZeroDivisionError):
                 return None
-        value = _first(value, "remainingPercent", "remaining_percentage", "percent",
-                        "percentage", "remaining", "remainingQuota")
+        value = _first(
+            value, "remainingPercent", "remaining_percentage", "percent",
+            "percentage", "remaining", "remainingQuota",
+        )
     try:
-        number = float(value)
-        return max(0.0, min(100.0, number))
+        return max(0.0, min(100.0, float(value)))
     except (TypeError, ValueError):
         return None
 
 
-def _cookies(value: str) -> dict[str, str]:
-    return {
-        part.split("=", 1)[0].strip(): part.split("=", 1)[1].strip()
-        for part in value.split(";") if "=" in part
-    }
+def _parse_cookies(value: str) -> dict[str, str]:
+    cookies: dict[str, str] = {}
+    for part in value.split(";"):
+        if "=" in part:
+            name, cookie_value = part.split("=", 1)
+            cookies[name.strip()] = cookie_value.strip()
+    return cookies
 
 
 class QuotaFetcher:
-    """Fetches both providers concurrently and emits immutable aggregated state."""
+    """Fetches providers off the Tk thread and emits immutable combined state."""
 
     def __init__(self, config: AppConfig, on_result: Callable[[AggregatedQuotaState], None]) -> None:
         self.config = config
         self.on_result = on_result
         self._stop = threading.Event()
         self._refresh_lock = threading.Lock()
-        self._thread: threading.Thread | None = None
         self._state_lock = threading.Lock()
+        self._thread: threading.Thread | None = None
         self._state: dict[str, ProviderSnapshot] = {}
         self._next_due = {"antigravity": 0.0, "github_copilot": 0.0}
 
@@ -113,17 +116,21 @@ class QuotaFetcher:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._thread and self._thread is not threading.current_thread():
+            self._thread.join(timeout=2)
 
     def refresh_now(self) -> None:
-        threading.Thread(target=lambda: self._fetch_all(force=True),
-                         name="quota-refresh", daemon=True).start()
+        threading.Thread(
+            target=lambda: self._fetch_all(force=True),
+            name="quota-refresh",
+            daemon=True,
+        ).start()
 
     def _run(self) -> None:
         while not self._stop.is_set():
             self._fetch_all()
             now = time.monotonic()
-            due = [deadline - now for deadline in self._next_due.values()
-                   if deadline > now]
+            due = [deadline - now for deadline in self._next_due.values() if deadline > now]
             self._stop.wait(min(due or [1.0]))
 
     def _fetch_all(self, force: bool = False) -> None:
@@ -131,25 +138,26 @@ class QuotaFetcher:
             return
         try:
             now = time.monotonic()
-            enabled = {
-                "antigravity": self.config.antigravity.enabled,
-                "github_copilot": self.config.github_copilot.enabled,
-            }
+            jobs: dict[str, Any] = {}
+            if self.config.antigravity.enabled and (
+                force or now >= self._next_due["antigravity"]
+            ):
+                jobs["antigravity"] = self._fetch_antigravity
+            if self.config.github_copilot.enabled and (
+                force or now >= self._next_due["github_copilot"]
+            ):
+                jobs["github_copilot"] = self._fetch_github_copilot
+
             with ThreadPoolExecutor(max_workers=2, thread_name_prefix="quota-provider") as pool:
-                futures = {}
-                if enabled["antigravity"] and (
-                    force or now >= self._next_due["antigravity"]
-                ):
-                    futures["antigravity"] = pool.submit(self._fetch_antigravity)
-                if enabled["github_copilot"] and (
-                    force or now >= self._next_due["github_copilot"]
-                ):
-                    futures["github_copilot"] = pool.submit(self._fetch_github_copilot)
+                futures = {name: pool.submit(job) for name, job in jobs.items()}
                 for provider, future in futures.items():
                     try:
                         snapshot = future.result()
-                    except Exception as exc:
-                        snapshot = ProviderSnapshot(provider, error=f"Fetcher error: {str(exc)[:120]}")
+                    except Exception:
+                        snapshot = ProviderSnapshot(
+                            provider=provider,
+                            error="Provider fetch failed",
+                        )
                     with self._state_lock:
                         self._state[provider] = snapshot
                     interval = (
@@ -158,13 +166,23 @@ class QuotaFetcher:
                         else self.config.github_copilot.refresh_interval_sec
                     )
                     self._next_due[provider] = time.monotonic() + interval
+
             with self._state_lock:
                 state = AggregatedQuotaState(dict(self._state), time.time())
-            self.on_result(state)
+            try:
+                self.on_result(state)
+            except Exception:
+                # A UI callback must not terminate the polling loop.
+                pass
         finally:
             self._refresh_lock.release()
 
-    def _request(self, url: str, headers: dict[str, str], cookies: dict[str, str] | None = None) -> requests.Response:
+    @staticmethod
+    def _request(
+        url: str,
+        headers: dict[str, str],
+        cookies: dict[str, str] | None = None,
+    ) -> requests.Response:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Endpoint URL tidak valid")
@@ -175,33 +193,45 @@ class QuotaFetcher:
         try:
             headers = {"Accept": "application/json", "User-Agent": "AIQuotaWidget/1.0"}
             if provider.session_token:
-                headers["Authorization"] = f"Bearer {provider.session_token.removeprefix('Bearer ').strip()}"
-            response = self._request(provider.endpoint_url, headers, _cookies(provider.cookies))
+                token = provider.session_token.removeprefix("Bearer ").strip()
+                headers["Authorization"] = "Bearer " + token
+            response = self._request(provider.endpoint_url, headers, _parse_cookies(provider.cookies))
             if response.status_code == 401:
-                return ProviderSnapshot("antigravity", error="401 Unauthorized: token kedaluwarsa")
+                return ProviderSnapshot("antigravity", error="401 Unauthorized: token expired")
             response.raise_for_status()
             return self._parse_antigravity(response.json())
-        except (requests.RequestException, ValueError, json.JSONDecodeError, TypeError) as exc:
-            return ProviderSnapshot("antigravity", error=str(exc)[:160])
+        except (requests.RequestException, ValueError, json.JSONDecodeError, TypeError):
+            return ProviderSnapshot("antigravity", error="Antigravity request failed")
 
     def _parse_antigravity(self, payload: Any) -> ProviderSnapshot:
         data = payload.get("data", payload) if isinstance(payload, dict) else {}
         if not isinstance(data, dict):
-            raise ValueError("Response Antigravity harus berupa object JSON")
+            raise ValueError("Antigravity response must be a JSON object")
         raw_models = _first(data, "models", "quotas", "limits", "usage") or {}
-        models: list[QuotaModel] = []
-        entries = raw_models if isinstance(raw_models, list) else raw_models.items() if isinstance(raw_models, dict) else ()
-        for name, item in entries if isinstance(raw_models, dict) else (
-            (str(item.get("name", "Model")), item) for item in raw_models if isinstance(item, dict)
-        ):
-            percent = _percent(item)
-            reset = _epoch(_first(item, "resetAt", "reset_at", "resetTime", "resetsAt")) if isinstance(item, dict) else None
+        if isinstance(raw_models, dict):
+            entries = raw_models.items()
+        elif isinstance(raw_models, list):
+            entries = (
+                (str(item.get("name", "Model")), item)
+                for item in raw_models if isinstance(item, dict)
+            )
+        else:
+            entries = ()
+        models = []
+        for name, item in entries:
+            percent = _remaining_percent(item)
+            reset = _epoch(_first(item, "resetAt", "reset_at", "resetTime", "resetsAt")) \
+                if isinstance(item, dict) else None
             models.append(QuotaModel(str(name), percent, reset))
         return ProviderSnapshot(
             provider="antigravity",
             models=tuple(models),
-            rolling_reset_at=_epoch(_first(data, "rollingResetAt", "rolling_reset_at", "fiveHourResetAt")),
-            weekly_reset_at=_epoch(_first(data, "weeklyResetAt", "weekly_reset_at", "weeklyCycleResetAt")),
+            rolling_reset_at=_epoch(_first(
+                data, "rollingResetAt", "rolling_reset_at", "fiveHourResetAt",
+            )),
+            weekly_reset_at=_epoch(_first(
+                data, "weeklyResetAt", "weekly_reset_at", "weeklyCycleResetAt",
+            )),
             account_status=str(_first(data, "accountStatus", "status", "account") or "Connected"),
             fetched_at=time.time(),
             source="remote",
@@ -209,35 +239,35 @@ class QuotaFetcher:
 
     def _fetch_github_copilot(self) -> ProviderSnapshot:
         provider = self.config.github_copilot
+        token = provider.github_token.removeprefix("Bearer ").strip()
+        if not token:
+            return ProviderSnapshot("github_copilot", error="GitHub token not configured")
+        headers = {
+            "Accept": "application/json",
+            "Authorization": "Bearer " + token,
+            "Editor-Version": provider.editor_version,
+            "User-Agent": "AIQuotaWidget/1.0",
+        }
         try:
-            token = provider.github_token.removeprefix("Bearer ").strip()
-            if not token:
-                return ProviderSnapshot("github_copilot", error="GitHub token belum dikonfigurasi")
-            headers = {
-                "Accept": "application/json",
-                "Authorization": f"Bearer {token}",
-                "Editor-Version": provider.editor_version,
-                "User-Agent": "AIQuotaWidget/1.0",
-            }
             response = self._request(provider.endpoint_url, headers)
             if response.status_code == 401:
-                return ProviderSnapshot("github_copilot", error="401 Unauthorized: GitHub token invalid")
+                return ProviderSnapshot("github_copilot", error="401 Unauthorized: token invalid")
             if response.status_code == 429:
-                reset = _epoch(response.headers.get("X-RateLimit-Reset"))
-                return ProviderSnapshot("github_copilot", reset_at=reset, error="GitHub API rate limit")
+                return ProviderSnapshot(
+                    "github_copilot",
+                    reset_at=_epoch(response.headers.get("X-RateLimit-Reset")),
+                    error="GitHub API rate limit",
+                )
             if response.status_code == 404:
-                # The internal Copilot endpoint is not available for every
-                # account/API deployment. Verify the token through the stable
-                # public identity endpoint rather than reporting offline.
-                response = self._request("https://api.github.com/user", headers)
-                if response.status_code == 401:
-                    return ProviderSnapshot("github_copilot", error="401 Unauthorized: GitHub token invalid")
-                response.raise_for_status()
-                return self._parse_copilot_identity(response.json())
+                identity = self._request("https://api.github.com/user", headers)
+                if identity.status_code == 401:
+                    return ProviderSnapshot("github_copilot", error="401 Unauthorized: token invalid")
+                identity.raise_for_status()
+                return self._parse_copilot_identity(identity.json())
             response.raise_for_status()
             return self._parse_copilot(response.json(), response.headers)
-        except (requests.RequestException, ValueError, json.JSONDecodeError, TypeError) as exc:
-            return ProviderSnapshot("github_copilot", error=str(exc)[:160])
+        except (requests.RequestException, ValueError, json.JSONDecodeError, TypeError):
+            return ProviderSnapshot("github_copilot", error="GitHub Copilot request failed")
 
     @staticmethod
     def _parse_copilot_identity(payload: Any) -> ProviderSnapshot:
@@ -254,18 +284,15 @@ class QuotaFetcher:
     def _parse_copilot(self, payload: Any, headers: dict[str, str]) -> ProviderSnapshot:
         data = payload.get("data", payload) if isinstance(payload, dict) else {}
         if not isinstance(data, dict):
-            raise ValueError("Response GitHub Copilot harus berupa object JSON")
-        quota = _percent(_first(data, "quota", "usage", "monthlyQuota", "completions"))
-        remaining = _percent(_first(data, "remainingPercent", "quotaRemainingPercent"))
+            raise ValueError("Copilot response must be a JSON object")
+        quota = _remaining_percent(_first(data, "quota", "usage", "monthlyQuota", "completions"))
+        remaining = _remaining_percent(_first(data, "remainingPercent", "quotaRemainingPercent"))
         reset = _epoch(_first(data, "resetAt", "reset_at", "quotaResetAt", "resetDate"))
-        if reset is None:
-            reset = _epoch(headers.get("X-RateLimit-Reset"))
-        if remaining is None and quota is not None:
-            remaining = quota
+        remaining = remaining if remaining is not None else quota
         return ProviderSnapshot(
             provider="github_copilot",
             quota_percent=remaining,
-            reset_at=reset,
+            reset_at=reset or _epoch(headers.get("X-RateLimit-Reset")),
             plan_tier=str(_first(data, "plan", "planTier", "tier", "sku") or "Copilot"),
             account_status=str(_first(data, "status", "accountStatus") or "Connected"),
             fetched_at=time.time(),

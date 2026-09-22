@@ -284,6 +284,10 @@ class QuotaWidget(ctk.CTk):
                 return model.remaining_percent
         return None
 
+    @staticmethod
+    def _display_percent(value: float | None) -> str:
+        return f"{value:.0f}%" if value is not None else "--%"
+
     def _set_summary(self, summary: dict[str, ctk.CTkBaseClass], percent: float | None) -> None:
         color = quota_color(percent)
         summary["bar"].configure(progress_color=color)
@@ -307,18 +311,29 @@ class QuotaWidget(ctk.CTk):
         self.last_state = state
         ag = state.providers.get("antigravity", ProviderSnapshot("antigravity"))
         gh = state.providers.get("github_copilot", ProviderSnapshot("github_copilot"))
-        errors = [snapshot.error for snapshot in (ag, gh) if snapshot.error]
-        self.status_dot.configure(text_color=COLORS["red"] if errors else COLORS["green"])
-        self.status.configure(text="OFFLINE" if errors else "SYNCED",
-                              text_color=COLORS["red"] if errors else COLORS["green"])
+        enabled = [
+            snapshot for snapshot, configured in (
+                (ag, self.config.antigravity.enabled),
+                (gh, self.config.github_copilot.enabled),
+            ) if configured
+        ]
+        errors = [snapshot.error for snapshot in enabled if snapshot.error]
+        synced = [snapshot for snapshot in enabled if snapshot.source == "remote" and not snapshot.error]
+        offline = bool(enabled) and not synced
+        status_color = COLORS["red"] if offline else COLORS["orange"] if errors else COLORS["green"]
+        self.status_dot.configure(text_color=status_color)
+        self.status.configure(
+            text="OFFLINE" if offline else "PARTIAL" if errors else "SYNCED",
+            text_color=status_color,
+        )
         ag_percent = self._model_percent(ag, "gemini pro", "pro")
         self._set_summary(self.ag_summary, ag_percent)
         self._set_summary(self.gh_summary, gh.quota_percent)
         self.ag_card["body"].configure(
             text=f"{ag.error or ag.account_status}\n"
-                 f"Gemini Pro {self._model_percent(ag, 'gemini pro', 'pro') or '--':>3}%  •  "
-                 f"Flash {self._model_percent(ag, 'flash') or '--':>3}%\n"
-                 f"Claude {self._model_percent(ag, 'claude', 'opus') or '--':>3}%\n"
+                 f"Gemini Pro {self._display_percent(self._model_percent(ag, 'gemini pro', 'pro')):>4}  •  "
+                 f"Flash {self._display_percent(self._model_percent(ag, 'flash')):>4}\n"
+                 f"Claude {self._display_percent(self._model_percent(ag, 'claude', 'opus')):>4}\n"
                  f"Rolling 5h  {self._date(ag.rolling_reset_at)}  •  Weekly {self._date(ag.weekly_reset_at)}"
         )
         self.gh_card["body"].configure(

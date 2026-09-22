@@ -12,6 +12,7 @@ def main() -> None:
     config = manager.load()
     if not config.github_copilot.github_token:
         manager.auto_configure_github_token()
+        config = manager.load()
     app: QuotaWidget | None = None
     tray: TrayIcon | None = None
 

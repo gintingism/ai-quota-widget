@@ -134,13 +134,31 @@ class ConfigManager:
     @staticmethod
     def _normalize(config: AppConfig) -> None:
         config.theme = config.theme if config.theme in {"dark", "light", "system"} else "dark"
-        config.window_alpha = min(1.0, max(0.55, float(config.window_alpha)))
-        config.weekly_reset_weekday = min(6, max(0, int(config.weekly_reset_weekday)))
-        config.weekly_reset_hour = min(23, max(0, int(config.weekly_reset_hour)))
-        config.weekly_reset_minute = min(59, max(0, int(config.weekly_reset_minute)))
+        config.window_alpha = min(1.0, max(0.55, ConfigManager._number(config.window_alpha, 0.94)))
+        config.weekly_reset_weekday = min(6, max(0, ConfigManager._integer(config.weekly_reset_weekday, 0)))
+        config.weekly_reset_hour = min(23, max(0, ConfigManager._integer(config.weekly_reset_hour, 0)))
+        config.weekly_reset_minute = min(59, max(0, ConfigManager._integer(config.weekly_reset_minute, 0)))
         config.always_on_top = bool(config.always_on_top)
         config.ui_mode = config.ui_mode if config.ui_mode in {"docked", "floating"} else "docked"
         config.antigravity.enabled = bool(config.antigravity.enabled)
-        config.antigravity.refresh_interval_sec = min(3600, max(60, int(config.antigravity.refresh_interval_sec)))
+        config.antigravity.refresh_interval_sec = min(
+            3600, max(60, ConfigManager._integer(config.antigravity.refresh_interval_sec, 600))
+        )
         config.github_copilot.enabled = bool(config.github_copilot.enabled)
-        config.github_copilot.refresh_interval_sec = min(3600, max(60, int(config.github_copilot.refresh_interval_sec)))
+        config.github_copilot.refresh_interval_sec = min(
+            3600, max(60, ConfigManager._integer(config.github_copilot.refresh_interval_sec, 300))
+        )
+
+    @staticmethod
+    def _integer(value: Any, fallback: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    @staticmethod
+    def _number(value: Any, fallback: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return fallback
