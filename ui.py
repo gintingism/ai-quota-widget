@@ -240,10 +240,23 @@ class QuotaWidget(ctk.CTk):
                                           fg_color="transparent", hover_color=COLORS["border"],
                                           text_color=COLORS["muted"], command=self.hide_to_tray)
         self.close_button.pack(side="right")
-        ctk.CTkLabel(self.card, text="Remaining quota", text_color=COLORS["muted"],
-                     font=ctk.CTkFont("Segoe UI", 10)).pack(anchor="w", padx=18, pady=(10, 0))
+        ctk.CTkLabel(self.card, text="Quota at a glance", text_color=COLORS["muted"],
+                     font=ctk.CTkFont("Segoe UI", 10, "bold")).pack(anchor="w", padx=18, pady=(10, 0))
+        primary = ctk.CTkFrame(self.card, fg_color="transparent")
+        primary.pack(fill="x", padx=18, pady=(0, 2))
+        self.primary_value = ctk.CTkLabel(
+            primary, text="--%", text_color=COLORS["muted"],
+            font=ctk.CTkFont("Segoe UI", 30, "bold"),
+        )
+        self.primary_value.pack(side="left")
+        self.primary_label = ctk.CTkLabel(
+            primary, text="Premium interactions remaining", text_color=COLORS["text"],
+            anchor="w", justify="left", wraplength=180,
+            font=ctk.CTkFont("Segoe UI", 10, "bold"),
+        )
+        self.primary_label.pack(side="left", padx=(10, 0))
         self.summary_frame = ctk.CTkFrame(self.card, fg_color="transparent")
-        self.summary_frame.pack(fill="x", padx=16, pady=(4, 0))
+        self.summary_frame.pack(fill="x", padx=16, pady=(2, 0))
         self.ag_summary = self._summary_row(self.summary_frame, "Antigravity")
         self.gh_summary = self._summary_row(self.summary_frame, "Copilot")
         self.reset = ctk.CTkLabel(self.card, text="Nearest reset  •  --",
@@ -277,18 +290,39 @@ class QuotaWidget(ctk.CTk):
         value.pack(side="right", padx=(6, 0))
         return {"row": row, "bar": bar, "value": value}
 
-    def _provider_card(self, parent: ctk.CTkFrame, title: str) -> dict[str, ctk.CTkLabel]:
+    def _provider_card(self, parent: ctk.CTkFrame, title: str) -> dict[str, Any]:
         card = ctk.CTkFrame(parent, fg_color=COLORS["surface_raised"], corner_radius=8,
                             border_width=1, border_color=COLORS["border"])
         card.pack(side="left", fill="both", expand=True, padx=(0, 6 if "ANTIGRAVITY" in title else 0))
-        heading = ctk.CTkLabel(card, text=title.title(), text_color=self.config.accent_color,
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=12, pady=(10, 0))
+        heading = ctk.CTkLabel(header, text=title.title(), text_color=self.config.accent_color,
                                font=ctk.CTkFont("Segoe UI", 10, "bold"))
-        heading.pack(anchor="w", padx=12, pady=(10, 4))
-        body = ctk.CTkLabel(card, text="Waiting for sync…", justify="left", anchor="w",
+        heading.pack(side="left")
+        badge = ctk.CTkLabel(header, text="--", text_color=COLORS["muted"],
+                             fg_color=COLORS["border"], corner_radius=8,
+                             font=ctk.CTkFont("Segoe UI", 9, "bold"))
+        badge.pack(side="right", padx=(4, 0))
+        metric = ctk.CTkLabel(card, text="--%", text_color=COLORS["muted"],
+                              font=ctk.CTkFont("Segoe UI", 28, "bold"))
+        metric.pack(anchor="w", padx=12, pady=(5, 0))
+        metric_label = ctk.CTkLabel(card, text="Remaining", text_color=COLORS["muted"],
+                                    font=ctk.CTkFont("Segoe UI", 10))
+        metric_label.pack(anchor="w", padx=12)
+        counts = ctk.CTkLabel(card, text="Counts unavailable", text_color=COLORS["text"],
+                              anchor="w", font=ctk.CTkFont("Segoe UI", 10))
+        counts.pack(fill="x", padx=12, pady=(5, 0))
+        rows = ctk.CTkLabel(card, text="Waiting for sync…", justify="left", anchor="w",
                             text_color=COLORS["text"], wraplength=175,
                             font=ctk.CTkFont("Segoe UI", 10))
-        body.pack(fill="x", padx=12, pady=(0, 10))
-        return {"card": card, "heading": heading, "body": body}
+        rows.pack(fill="x", padx=12, pady=(5, 0))
+        reset = ctk.CTkLabel(card, text="Reset --", text_color=COLORS["muted"],
+                             anchor="w", font=ctk.CTkFont("Segoe UI", 9))
+        reset.pack(fill="x", padx=12, pady=(5, 10))
+        return {
+            "card": card, "heading": heading, "badge": badge, "metric": metric,
+            "metric_label": metric_label, "counts": counts, "rows": rows, "reset": reset,
+        }
 
     @staticmethod
     def _format(seconds: int) -> str:
@@ -322,7 +356,45 @@ class QuotaWidget(ctk.CTk):
             elif model.remaining is not None and model.entitlement is not None:
                 status += f" ({model.remaining:g}/{model.entitlement:g})"
             details.append(f"{model.name} {status}")
-        return "  •  ".join(details)
+        return "\n".join(details)
+
+    @staticmethod
+    def _count_text(model: Any) -> str:
+        if model is None:
+            return "Counts unavailable"
+        if model.unlimited:
+            return "Unlimited"
+        if model.remaining is not None and model.entitlement is not None:
+            used = model.used
+            if used is None:
+                used = max(0.0, model.entitlement - model.remaining)
+            return f"{used:g} used  •  {model.remaining:g} remaining"
+        return "Counts unavailable"
+
+    def _set_provider_card(
+        self, card: dict[str, Any], snapshot: ProviderSnapshot, percent: float | None,
+        label: str, model: Any = None,
+    ) -> None:
+        color = quota_color(percent)
+        unavailable = bool(snapshot.error) or percent is None
+        card["metric"].configure(text=self._display_percent(percent), text_color=color)
+        card["metric_label"].configure(text=label)
+        card["badge"].configure(
+            text=snapshot.plan_tier if snapshot.plan_tier != "Unknown" else (
+                "Offline" if snapshot.error else "Connected"
+            ),
+            text_color=color if not snapshot.error else COLORS["red"],
+        )
+        card["counts"].configure(text=self._count_text(model))
+        if unavailable:
+            card["rows"].configure(
+                text=snapshot.error or snapshot.account_status or "Quota unavailable",
+                text_color=COLORS["orange"] if not snapshot.error else COLORS["red"],
+            )
+        else:
+            card["rows"].configure(text=self._model_details(snapshot) or "No category breakdown")
+        reset_at = snapshot.reset_at or snapshot.rolling_reset_at or snapshot.weekly_reset_at
+        card["reset"].configure(text=f"Reset  {self._date(reset_at)}")
 
     def _set_summary(self, summary: dict[str, ctk.CTkBaseClass], percent: float | None) -> None:
         color = quota_color(percent)
@@ -376,17 +448,22 @@ class QuotaWidget(ctk.CTk):
         ag_percent = self._model_percent(ag, "gemini pro", "pro")
         self._set_summary(self.ag_summary, ag_percent)
         self._set_summary(self.gh_summary, gh.quota_percent)
-        self.ag_card["body"].configure(
-            text=f"{ag.error or ag.account_status}\n"
-                 f"Gemini Pro {self._display_percent(self._model_percent(ag, 'gemini pro', 'pro')):>4}  •  "
-                 f"Flash {self._display_percent(self._model_percent(ag, 'flash')):>4}\n"
-                 f"Claude {self._display_percent(self._model_percent(ag, 'claude', 'opus')):>4}\n"
-                 f"Rolling 5h  {self._date(ag.rolling_reset_at)}  •  Weekly {self._date(ag.weekly_reset_at)}"
+        self.primary_value.configure(
+            text=self._display_percent(gh.quota_percent),
+            text_color=quota_color(gh.quota_percent),
         )
-        self.gh_card["body"].configure(
-            text=f"{gh.error or gh.account_status}\n"
-                 f"{self._model_details(gh) or 'Quota --%'}\n"
-                 f"Reset  {self._date(gh.reset_at)}  •  Plan {gh.plan_tier}"
+        self.primary_label.configure(
+            text="Premium interactions remaining"
+            if gh.quota_percent is not None
+            else "Premium interactions\nquota unavailable",
+        )
+        ag_model = next((model for model in ag.models
+                         if "gemini pro" in model.name.lower() or model.name.lower() == "pro"), None)
+        gh_model = next((model for model in gh.models
+                         if model.name.lower() == "premium_interactions"), None)
+        self._set_provider_card(self.ag_card, ag, ag_percent, "Gemini Pro remaining", ag_model)
+        self._set_provider_card(
+            self.gh_card, gh, gh.quota_percent, "Premium interactions remaining", gh_model
         )
 
     def toggle_expand(self) -> None:
@@ -406,8 +483,8 @@ class QuotaWidget(ctk.CTk):
         self._resize_step(0)
 
     def _resize_step(self, step: int) -> None:
-        target_width, target_height = (440, 360) if self.expanded else (440, 176)
-        start_width, start_height = (440, 176) if self.expanded else (440, 360)
+        target_width, target_height = (440, 430) if self.expanded else (440, 220)
+        start_width, start_height = (440, 220) if self.expanded else (440, 430)
         progress = min(1.0, (step + 1) / 5)
         width = round(start_width + (target_width - start_width) * progress)
         height = round(start_height + (target_height - start_height) * progress)
@@ -416,7 +493,7 @@ class QuotaWidget(ctk.CTk):
             self._resize_job = self.after(24, self._resize_step, step + 1)
 
     def set_mode(self) -> None:
-        self._set_geometry(440, 360 if self.expanded else 176)
+        self._set_geometry(440, 430 if self.expanded else 220)
 
     def _set_geometry(self, width: int, height: int) -> None:
         if self.config.ui_mode == "docked":

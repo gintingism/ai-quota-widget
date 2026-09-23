@@ -25,6 +25,7 @@ class QuotaModel:
     remaining: float | None = None
     entitlement: float | None = None
     unlimited: bool | None = None
+    used: float | None = None
 
 
 @dataclass(frozen=True)
@@ -249,7 +250,15 @@ class QuotaFetcher:
             percent = _remaining_percent(item)
             reset = _epoch(_first(item, "resetAt", "reset_at", "resetTime", "resetsAt")) \
                 if isinstance(item, dict) else None
-            models.append(QuotaModel(str(name), percent, reset))
+            models.append(QuotaModel(
+                str(name),
+                percent,
+                reset,
+                _number(_first(item, "remaining", "remainingQuota")) if isinstance(item, dict) else None,
+                _number(_first(item, "entitlement", "limit", "total")) if isinstance(item, dict) else None,
+                item.get("unlimited") if isinstance(item, dict) and isinstance(item.get("unlimited"), bool) else None,
+                _number(_first(item, "used", "consumed")) if isinstance(item, dict) else None,
+            ))
         return ProviderSnapshot(
             provider="antigravity",
             models=tuple(models),
@@ -359,6 +368,7 @@ class QuotaFetcher:
                     remaining=_number(_first(item, "remaining", "quota_remaining")),
                     entitlement=_number(item.get("entitlement")),
                     unlimited=item.get("unlimited") if isinstance(item.get("unlimited"), bool) else None,
+                    used=_number(_first(item, "used", "consumed")),
                 ))
             finite = [
                 model for model in models
