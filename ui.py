@@ -312,6 +312,18 @@ class QuotaWidget(ctk.CTk):
     def _display_percent(value: float | None) -> str:
         return f"{value:.0f}%" if value is not None else "--%"
 
+    @staticmethod
+    def _model_details(snapshot: ProviderSnapshot) -> str:
+        details = []
+        for model in snapshot.models:
+            status = QuotaWidget._display_percent(model.remaining_percent)
+            if model.unlimited:
+                status += " unlimited"
+            elif model.remaining is not None and model.entitlement is not None:
+                status += f" ({model.remaining:g}/{model.entitlement:g})"
+            details.append(f"{model.name} {status}")
+        return "  •  ".join(details)
+
     def _set_summary(self, summary: dict[str, ctk.CTkBaseClass], percent: float | None) -> None:
         color = quota_color(percent)
         summary["bar"].configure(progress_color=color)
@@ -373,8 +385,7 @@ class QuotaWidget(ctk.CTk):
         )
         self.gh_card["body"].configure(
             text=f"{gh.error or gh.account_status}\n"
-                 f"Completions / chat  "
-                 f"{f'{gh.quota_percent:.0f}%' if gh.quota_percent is not None else '--%'}\n"
+                 f"{self._model_details(gh) or 'Quota --%'}\n"
                  f"Reset  {self._date(gh.reset_at)}  •  Plan {gh.plan_tier}"
         )
 

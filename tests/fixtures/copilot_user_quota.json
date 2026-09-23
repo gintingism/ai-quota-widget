@@ -1,0 +1,27 @@
+{
+  "copilot_plan": "individual",
+  "quota_reset_date_utc": "2026-10-01T00:00:00Z",
+  "quota_snapshots": {
+    "chat": {
+      "percent_remaining": 100,
+      "remaining": 0,
+      "entitlement": 0,
+      "unlimited": true,
+      "quota_reset_at": "2026-10-01T00:00:00Z"
+    },
+    "completions": {
+      "percent_remaining": 80,
+      "remaining": 800,
+      "entitlement": 1000,
+      "unlimited": false,
+      "quota_reset_at": "2026-10-01T00:00:00Z"
+    },
+    "premium_interactions": {
+      "percent_remaining": 65,
+      "remaining": 65,
+      "entitlement": 100,
+      "unlimited": false,
+      "quota_reset_at": "2026-10-01T00:00:00Z"
+    }
+  }
+}

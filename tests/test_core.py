@@ -37,6 +37,20 @@ class TimerTests(unittest.TestCase):
 
 
 class FetcherTests(unittest.TestCase):
+    def test_copilot_user_quota_snapshots_preserve_models_and_prefer_premium(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "copilot_user_quota.json"
+        payload = json.loads(fixture.read_text(encoding="utf-8"))
+        snapshot = QuotaFetcher(AppConfig(), Mock())._parse_copilot(payload, {})
+        self.assertEqual(snapshot.quota_percent, 65)
+        self.assertEqual(snapshot.plan_tier, "individual")
+        self.assertEqual(snapshot.reset_at, 1790812800)
+        self.assertEqual([model.name for model in snapshot.models], [
+            "chat", "completions", "premium_interactions",
+        ])
+        self.assertEqual(snapshot.models[0].remaining_percent, 100)
+        self.assertTrue(snapshot.models[0].unlimited)
+        self.assertEqual(snapshot.models[2].remaining, 65)
+
     def test_copilot_404_falls_back_to_identity(self) -> None:
         config = AppConfig()
         config.github_copilot.enabled = True

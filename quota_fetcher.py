@@ -22,6 +22,9 @@ class QuotaModel:
     name: str
     remaining_percent: float | None = None
     reset_at: float | None = None
+    remaining: float | None = None
+    entitlement: float | None = None
+    unlimited: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,23 @@ def _remaining_percent(value: Any) -> float | None:
         return max(0.0, min(100.0, float(value)))
     except (TypeError, ValueError):
         return None
+
+
+def _number(value: Any) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _snapshot_percent(value: Any) -> float | None:
+    """Read Copilot snapshot percentages without letting a zero count win."""
+    if not isinstance(value, dict):
+        return _remaining_percent(value)
+    percent = _first(value, "percent_remaining", "percentRemaining")
+    if percent is not None:
+        return _remaining_percent(percent)
+    return _remaining_percent(value)
 
 
 def _parse_cookies(value: str) -> dict[str, str]:
@@ -318,6 +338,60 @@ class QuotaFetcher:
             data = data["user"]
         if not isinstance(data, dict):
             raise ValueError("Copilot response must be a JSON object")
+        snapshots = _first(data, "quota_snapshots", "quotaSnapshots")
+        if isinstance(snapshots, (dict, list)):
+            entries = (
+                snapshots.items()
+                if isinstance(snapshots, dict)
+                else (
+                    (str(item.get("name", "Model")), item)
+                    for item in snapshots if isinstance(item, dict)
+                )
+            )
+            models: list[QuotaModel] = []
+            for name, item in entries:
+                if not isinstance(item, dict):
+                    continue
+                models.append(QuotaModel(
+                    name=str(name),
+                    remaining_percent=_snapshot_percent(item),
+                    reset_at=_epoch(_first(item, "quota_reset_at", "quotaResetAt")),
+                    remaining=_number(_first(item, "remaining", "quota_remaining")),
+                    entitlement=_number(item.get("entitlement")),
+                    unlimited=item.get("unlimited") if isinstance(item.get("unlimited"), bool) else None,
+                ))
+            finite = [
+                model for model in models
+                if model.unlimited is not True and model.remaining_percent is not None
+            ]
+            premium = next(
+                (model for model in finite if model.name.lower() == "premium_interactions"),
+                None,
+            )
+            selected = premium or next(
+                (model for model in finite if model.remaining_percent is not None),
+                None,
+            )
+            if selected is None:
+                selected = next(
+                    (model for model in models if model.remaining_percent is not None),
+                    None,
+                )
+            reset = _epoch(_first(
+                data, "quota_reset_date_utc", "quotaResetDateUtc",
+                "resetAt", "reset_at", "quotaResetAt", "resetDate",
+            ))
+            return ProviderSnapshot(
+                provider="github_copilot",
+                models=tuple(models),
+                quota_percent=selected.remaining_percent if selected else None,
+                reset_at=reset or (selected.reset_at if selected else None) \
+                    or _epoch(headers.get("X-RateLimit-Reset")),
+                plan_tier=str(_first(data, "copilot_plan", "plan", "planTier", "tier", "sku") or "Copilot"),
+                account_status=str(_first(data, "status", "accountStatus") or "Connected"),
+                fetched_at=time.time(),
+                source="remote",
+            )
         quota = _remaining_percent(_first(
             data, "quota", "usage", "monthlyQuota", "completions",
             "premiumInteractions", "premium_interactions",
