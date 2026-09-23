@@ -17,11 +17,12 @@ from timer_engine import TimerEngine
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 COLORS = {
-    "surface": "#121214",
-    "surface_raised": "#18181B",
-    "border": "#27272A",
-    "muted": "#A1A1AA",
-    "text": "#F4F4F5",
+    "surface": "#202020",
+    "surface_raised": "#2B2B2B",
+    "surface_subtle": "#252525",
+    "border": "#3A3A3A",
+    "muted": "#B8B8B8",
+    "text": "#F5F5F5",
     "green": "#4ADE80",
     "orange": "#F59E0B",
     "red": "#F87171",
@@ -45,7 +46,7 @@ class SettingsWindow(ctk.CTkToplevel):
         super().__init__(parent)
         self.config, self.on_save = config, on_save
         self.title("AI Quota Settings")
-        self.geometry("520x800")
+        self.geometry("680x760")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -53,11 +54,16 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _build(self, focus_provider: str | None) -> None:
         ctk.CTkLabel(
-            self, text="Provider credentials", text_color=COLORS["text"],
-            font=ctk.CTkFont("Segoe UI", 20, "bold")
-        ).pack(pady=14)
+            self, text="Settings", text_color=COLORS["text"],
+            font=ctk.CTkFont("Segoe UI", 22, "bold")
+        ).pack(anchor="w", padx=20, pady=(18, 2))
+        ctk.CTkLabel(
+            self, text="Manage providers, refresh behavior, and appearance",
+            text_color=COLORS["muted"], font=ctk.CTkFont("Segoe UI", 10)
+        ).pack(anchor="w", padx=20, pady=(0, 14))
         frame = ctk.CTkScrollableFrame(self, fg_color=COLORS["surface_raised"])
         frame.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self._section_label(frame, "Providers")
         ctk.CTkLabel(frame, text="Re-auth provider", text_color=COLORS["muted"]).pack(
             anchor="w", padx=8, pady=(4, 3)
         )
@@ -94,6 +100,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.gh_interval = self._field(frame, "GitHub refresh interval (60-3600 sec)",
                                        str(self.config.github_copilot.refresh_interval_sec), False,
                                        "300")
+        self._section_label(frame, "Reset schedule")
         self.reset_time = self._field(frame, "Fallback weekly reset time (HH:MM)",
                                       f"{self.config.weekly_reset_hour:02d}:{self.config.weekly_reset_minute:02d}",
                                       False, "00:00")
@@ -101,6 +108,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.weekday = ctk.CTkComboBox(frame, values=WEEKDAYS)
         self.weekday.set(WEEKDAYS[self.config.weekly_reset_weekday])
         self.weekday.pack(fill="x", padx=8)
+        self._section_label(frame, "Appearance")
         self.always_top = ctk.BooleanVar(value=self.config.always_on_top)
         ctk.CTkCheckBox(frame, text="Always on top",
                         variable=self.always_top).pack(anchor="w", padx=8, pady=10)
@@ -109,6 +117,12 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkButton(self, text="Save & Apply", height=38, command=self.save).pack(
             fill="x", padx=16, pady=(8, 16)
         )
+
+    @staticmethod
+    def _section_label(parent: ctk.CTkFrame, text: str) -> None:
+        ctk.CTkLabel(parent, text=text.upper(), text_color=COLORS["muted"],
+                     font=ctk.CTkFont("Segoe UI", 10, "bold")).pack(
+                         anchor="w", padx=8, pady=(16, 4))
 
     @staticmethod
     def _field(parent, label: str, value: str, secret: bool = False,
@@ -203,34 +217,44 @@ class QuotaWidget(ctk.CTk):
                                  border_width=1, border_color=COLORS["border"])
         self.card.pack(fill="both", expand=True, padx=2, pady=2)
         self.header = ctk.CTkFrame(self.card, fg_color="transparent")
-        self.header.pack(fill="x", padx=16, pady=(12, 0))
-        ctk.CTkLabel(self.header, text="AI QUOTA", text_color=self.config.accent_color,
-                     font=ctk.CTkFont("Segoe UI", 11, "bold")).pack(side="left")
+        self.header.pack(fill="x", padx=18, pady=(14, 0))
+        ctk.CTkLabel(self.header, text="AI quota", text_color=COLORS["text"],
+                     font=ctk.CTkFont("Segoe UI", 15, "bold")).pack(side="left")
         self.status_dot = ctk.CTkLabel(self.header, text="●", text_color=COLORS["muted"],
                                        font=ctk.CTkFont("Segoe UI", 13))
         self.status_dot.pack(side="left", padx=(8, 3))
         self.status = ctk.CTkLabel(self.header, text="SYNCING…", text_color=COLORS["muted"],
                                    font=ctk.CTkFont("Segoe UI", 10))
         self.status.pack(side="left")
-        self.refresh_button = ctk.CTkButton(self.header, text="↻", width=28, height=24,
+        self.refresh_button = ctk.CTkButton(self.header, text="Refresh", width=66, height=26,
                                             fg_color="transparent", hover_color=COLORS["border"],
-                                            text_color=COLORS["text"], command=self.refresh_now)
+                                            text_color=COLORS["text"], font=ctk.CTkFont("Segoe UI", 10),
+                                            command=self.refresh_now)
         self.refresh_button.pack(side="right", padx=(6, 0))
-        self.settings_button = ctk.CTkButton(self.header, text="⚙", width=28, height=24,
+        self.settings_button = ctk.CTkButton(self.header, text="Settings", width=72, height=26,
                                              fg_color="transparent", hover_color=COLORS["border"],
-                                             text_color=COLORS["text"], command=self.open_settings)
+                                             text_color=COLORS["text"], font=ctk.CTkFont("Segoe UI", 10),
+                                             command=self.open_settings)
         self.settings_button.pack(side="right", padx=(6, 0))
         self.close_button = ctk.CTkButton(self.header, text="×", width=28, height=24,
                                           fg_color="transparent", hover_color=COLORS["border"],
                                           text_color=COLORS["muted"], command=self.hide_to_tray)
         self.close_button.pack(side="right")
+        ctk.CTkLabel(self.card, text="Remaining quota", text_color=COLORS["muted"],
+                     font=ctk.CTkFont("Segoe UI", 10)).pack(anchor="w", padx=18, pady=(10, 0))
         self.summary_frame = ctk.CTkFrame(self.card, fg_color="transparent")
-        self.summary_frame.pack(fill="x", padx=16, pady=(10, 0))
+        self.summary_frame.pack(fill="x", padx=16, pady=(4, 0))
         self.ag_summary = self._summary_row(self.summary_frame, "Antigravity")
         self.gh_summary = self._summary_row(self.summary_frame, "Copilot")
         self.reset = ctk.CTkLabel(self.card, text="Nearest reset  •  --",
                                   text_color=COLORS["muted"], font=ctk.CTkFont("Segoe UI", 10))
         self.reset.pack(pady=(6, 12))
+        self.details_button = ctk.CTkButton(self.card, text="Show details", height=28,
+                                            fg_color=COLORS["surface_subtle"],
+                                            hover_color=COLORS["border"],
+                                            text_color=COLORS["text"],
+                                            command=self.toggle_expand)
+        self.details_button.pack(fill="x", padx=18, pady=(0, 12))
         self.details = ctk.CTkFrame(self.card, fg_color="transparent")
         self.ag_card = self._provider_card(self.details, "GOOGLE ANTIGRAVITY")
         self.gh_card = self._provider_card(self.details, "GITHUB COPILOT")
@@ -254,10 +278,10 @@ class QuotaWidget(ctk.CTk):
         return {"row": row, "bar": bar, "value": value}
 
     def _provider_card(self, parent: ctk.CTkFrame, title: str) -> dict[str, ctk.CTkLabel]:
-        card = ctk.CTkFrame(parent, fg_color=COLORS["surface_raised"], corner_radius=12,
+        card = ctk.CTkFrame(parent, fg_color=COLORS["surface_raised"], corner_radius=8,
                             border_width=1, border_color=COLORS["border"])
         card.pack(side="left", fill="both", expand=True, padx=(0, 6 if "ANTIGRAVITY" in title else 0))
-        heading = ctk.CTkLabel(card, text=title, text_color=self.config.accent_color,
+        heading = ctk.CTkLabel(card, text=title.title(), text_color=self.config.accent_color,
                                font=ctk.CTkFont("Segoe UI", 10, "bold"))
         heading.pack(anchor="w", padx=12, pady=(10, 4))
         body = ctk.CTkLabel(card, text="Waiting for sync…", justify="left", anchor="w",
@@ -345,6 +369,7 @@ class QuotaWidget(ctk.CTk):
 
     def toggle_expand(self) -> None:
         self.expanded = not self.expanded
+        self.details_button.configure(text="Hide details" if self.expanded else "Show details")
         if self.expanded:
             self.details.pack(fill="both", expand=True, padx=16, pady=(0, 8))
             self.action.pack(fill="x", padx=32, pady=(3, 12))
@@ -359,8 +384,8 @@ class QuotaWidget(ctk.CTk):
         self._resize_step(0)
 
     def _resize_step(self, step: int) -> None:
-        target_width, target_height = (420, 300) if self.expanded else (420, 118)
-        start_width, start_height = (420, 118) if self.expanded else (420, 300)
+        target_width, target_height = (440, 360) if self.expanded else (440, 176)
+        start_width, start_height = (440, 176) if self.expanded else (440, 360)
         progress = min(1.0, (step + 1) / 5)
         width = round(start_width + (target_width - start_width) * progress)
         height = round(start_height + (target_height - start_height) * progress)
@@ -369,7 +394,7 @@ class QuotaWidget(ctk.CTk):
             self._resize_job = self.after(24, self._resize_step, step + 1)
 
     def set_mode(self) -> None:
-        self._set_geometry(420, 300 if self.expanded else 118)
+        self._set_geometry(440, 360 if self.expanded else 176)
 
     def _set_geometry(self, width: int, height: int) -> None:
         if self.config.ui_mode == "docked":
