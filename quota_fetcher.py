@@ -14,6 +14,8 @@ import requests
 
 from config_manager import AppConfig
 
+COPILOT_USER_ENDPOINT = "https://api.github.com/copilot_internal/user"
+
 
 @dataclass(frozen=True)
 class QuotaModel:
@@ -75,6 +77,11 @@ def _remaining_percent(value: Any) -> float | None:
                 return max(0.0, min(100.0, 100.0 * (1 - float(used) / float(limit))))
             except (TypeError, ValueError, ZeroDivisionError):
                 return None
+        nested = _first(value, "quota", "usage", "limit")
+        if isinstance(nested, dict):
+            nested_percent = _remaining_percent(nested)
+            if nested_percent is not None:
+                return nested_percent
         value = _first(
             value, "remainingPercent", "remaining_percentage", "percent",
             "percentage", "remaining", "remainingQuota",
@@ -259,15 +266,39 @@ class QuotaFetcher:
                     error="GitHub API rate limit",
                 )
             if response.status_code == 404:
-                identity = self._request("https://api.github.com/user", headers)
-                if identity.status_code == 401:
-                    return ProviderSnapshot("github_copilot", error="401 Unauthorized: token invalid")
-                identity.raise_for_status()
-                return self._parse_copilot_identity(identity.json())
+                return self._fetch_copilot_user(headers)
             response.raise_for_status()
-            return self._parse_copilot(response.json(), response.headers)
+            snapshot = self._parse_copilot(response.json(), response.headers)
+            if snapshot.quota_percent is not None:
+                return snapshot
+            if provider.endpoint_url.rstrip("/") != COPILOT_USER_ENDPOINT:
+                return self._fetch_copilot_user(headers)
+            return self._fetch_copilot_identity(headers)
         except (requests.RequestException, ValueError, json.JSONDecodeError, TypeError):
             return ProviderSnapshot("github_copilot", error="GitHub Copilot request failed")
+
+    def _fetch_copilot_user(self, headers: dict[str, str]) -> ProviderSnapshot:
+        response = self._request(COPILOT_USER_ENDPOINT, headers)
+        if response.status_code == 401:
+            return ProviderSnapshot("github_copilot", error="401 Unauthorized: token invalid")
+        if response.status_code == 404:
+            return self._fetch_copilot_identity(headers)
+        if response.status_code == 429:
+            return ProviderSnapshot(
+                "github_copilot",
+                reset_at=_epoch(response.headers.get("X-RateLimit-Reset")),
+                error="GitHub API rate limit",
+            )
+        response.raise_for_status()
+        snapshot = self._parse_copilot(response.json(), response.headers)
+        return snapshot if snapshot.quota_percent is not None else self._fetch_copilot_identity(headers)
+
+    def _fetch_copilot_identity(self, headers: dict[str, str]) -> ProviderSnapshot:
+        identity = self._request("https://api.github.com/user", headers)
+        if identity.status_code == 401:
+            return ProviderSnapshot("github_copilot", error="401 Unauthorized: token invalid")
+        identity.raise_for_status()
+        return self._parse_copilot_identity(identity.json())
 
     @staticmethod
     def _parse_copilot_identity(payload: Any) -> ProviderSnapshot:
@@ -283,10 +314,27 @@ class QuotaFetcher:
 
     def _parse_copilot(self, payload: Any, headers: dict[str, str]) -> ProviderSnapshot:
         data = payload.get("data", payload) if isinstance(payload, dict) else {}
+        if isinstance(data, dict) and isinstance(data.get("user"), dict):
+            data = data["user"]
         if not isinstance(data, dict):
             raise ValueError("Copilot response must be a JSON object")
-        quota = _remaining_percent(_first(data, "quota", "usage", "monthlyQuota", "completions"))
-        remaining = _remaining_percent(_first(data, "remainingPercent", "quotaRemainingPercent"))
+        quota = _remaining_percent(_first(
+            data, "quota", "usage", "monthlyQuota", "completions",
+            "premiumInteractions", "premium_interactions",
+        ))
+        remaining = _remaining_percent(_first(
+            data, "remainingPercent", "quotaRemainingPercent",
+            "percentRemaining", "percent_remaining",
+        ))
+        breakdown = _first(data, "breakdown", "quotas", "limits")
+        if remaining is None and isinstance(breakdown, dict):
+            percentages = [
+                _remaining_percent(item) for item in breakdown.values()
+                if isinstance(item, (dict, int, float, str))
+            ]
+            percentages = [percent for percent in percentages if percent is not None]
+            if percentages:
+                remaining = min(percentages)
         reset = _epoch(_first(data, "resetAt", "reset_at", "quotaResetAt", "resetDate"))
         remaining = remaining if remaining is not None else quota
         return ProviderSnapshot(

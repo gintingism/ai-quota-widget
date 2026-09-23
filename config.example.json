@@ -25,7 +25,7 @@
     "enabled": true,
     "github_token": "",
     "refresh_interval_sec": 300,
-    "endpoint_url": "https://api.github.com/copilot_internal/v2/token",
+    "endpoint_url": "https://api.github.com/copilot_internal/user",
     "editor_version": "vscode/1.99.0"
   }
 }

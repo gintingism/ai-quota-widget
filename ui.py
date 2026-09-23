@@ -344,10 +344,21 @@ class QuotaWidget(ctk.CTk):
         errors = [snapshot.error for snapshot in enabled if snapshot.error]
         synced = [snapshot for snapshot in enabled if snapshot.source == "remote" and not snapshot.error]
         offline = bool(enabled) and not synced
-        status_color = COLORS["red"] if offline else COLORS["orange"] if errors else COLORS["green"]
+        quota_unavailable = any(
+            snapshot.provider == "github_copilot"
+            and snapshot.source == "remote"
+            and not snapshot.error
+            and snapshot.quota_percent is None
+            for snapshot in enabled
+        )
+        status_color = (
+            COLORS["red"] if offline
+            else COLORS["orange"] if errors or quota_unavailable
+            else COLORS["green"]
+        )
         self.status_dot.configure(text_color=status_color)
         self.status.configure(
-            text="OFFLINE" if offline else "PARTIAL" if errors else "SYNCED",
+            text="OFFLINE" if offline else "LIMITED" if quota_unavailable else "PARTIAL" if errors else "SYNCED",
             text_color=status_color,
         )
         ag_percent = self._model_percent(ag, "gemini pro", "pro")

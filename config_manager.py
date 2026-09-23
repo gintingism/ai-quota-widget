@@ -28,7 +28,7 @@ class GitHubCopilotConfig:
     enabled: bool = False
     github_token: str = ""
     refresh_interval_sec: int = 300
-    endpoint_url: str = "https://api.github.com/copilot_internal/v2/token"
+    endpoint_url: str = "https://api.github.com/copilot_internal/user"
     editor_version: str = "vscode/1.99.0"
 
 
