@@ -4,7 +4,6 @@ import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable
@@ -13,40 +12,14 @@ from urllib.parse import urlparse
 import requests
 
 from config_manager import AppConfig
+from provider_adapters import AntigravityProvider, AntigravityUsageReader
+from quota_models import AggregatedQuotaState, ProviderSnapshot, QuotaStatus
+from sync_relay import sync_state
 
 COPILOT_USER_ENDPOINT = "https://api.github.com/copilot_internal/user"
 
 
-@dataclass(frozen=True)
-class QuotaModel:
-    name: str
-    remaining_percent: float | None = None
-    reset_at: float | None = None
-    remaining: float | None = None
-    entitlement: float | None = None
-    unlimited: bool | None = None
-    used: float | None = None
-
-
-@dataclass(frozen=True)
-class ProviderSnapshot:
-    provider: str
-    models: tuple[QuotaModel, ...] = ()
-    quota_percent: float | None = None
-    reset_at: float | None = None
-    rolling_reset_at: float | None = None
-    weekly_reset_at: float | None = None
-    plan_tier: str = "Unknown"
-    account_status: str = "Not connected"
-    fetched_at: float = 0.0
-    source: str = "local"
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class AggregatedQuotaState:
-    providers: dict[str, ProviderSnapshot] = field(default_factory=dict)
-    fetched_at: float = 0.0
+QuotaModel = QuotaStatus
 
 
 def _first(data: dict[str, Any], *keys: str) -> Any:
@@ -198,6 +171,10 @@ class QuotaFetcher:
             with self._state_lock:
                 state = AggregatedQuotaState(dict(self._state), time.time())
             try:
+                sync_state(self.config.sync_relay, state)
+            except (requests.RequestException, ValueError, TypeError):
+                pass
+            try:
                 self.on_result(state)
             except Exception:
                 # A UI callback must not terminate the polling loop.
@@ -223,6 +200,11 @@ class QuotaFetcher:
             if provider.session_token:
                 token = provider.session_token.removeprefix("Bearer ").strip()
                 headers["Authorization"] = "Bearer " + token
+            if provider.local_reader and not provider.endpoint_url:
+                return AntigravityProvider(
+                    self._parse_antigravity,
+                    AntigravityUsageReader(),
+                ).fetch()
             response = self._request(provider.endpoint_url, headers, _parse_cookies(provider.cookies))
             if response.status_code == 401:
                 return ProviderSnapshot("antigravity", error="401 Unauthorized: token expired")

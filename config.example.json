@@ -16,6 +16,7 @@
   "ui_mode": "docked",
   "antigravity": {
     "enabled": true,
+    "local_reader": true,
     "endpoint_url": "https://your-antigravity-status-endpoint.example/api/quota",
     "session_token": "",
     "cookies": "",
@@ -27,5 +28,11 @@
     "refresh_interval_sec": 300,
     "endpoint_url": "https://api.github.com/copilot_internal/user",
     "editor_version": "vscode/1.99.0"
+  },
+  "sync_relay": {
+    "enabled": false,
+    "base_url": "",
+    "auth_token": "",
+    "interval_sec": 300
   }
 }

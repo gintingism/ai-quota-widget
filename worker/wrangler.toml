@@ -1,0 +1,10 @@
+name = "ai-quota-relay"
+main = "index.js"
+compatibility_date = "2026-10-03"
+
+[[kv_namespaces]]
+binding = "QUOTA_KV"
+id = "replace-with-production-kv-id"
+
+[vars]
+AUTH_TOKEN = "set-with-wrangler-secret"

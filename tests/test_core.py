@@ -11,6 +11,9 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from config_manager import AppConfig, ConfigManager  # noqa: E402
 from quota_fetcher import COPILOT_USER_ENDPOINT, QuotaFetcher  # noqa: E402
+from provider_adapters import AntigravityUsageReader  # noqa: E402
+from quota_models import AggregatedQuotaState  # noqa: E402
+from sync_relay import state_payload  # noqa: E402
 from timer_engine import ROLLING_SECONDS, TimerEngine  # noqa: E402
 
 
@@ -37,6 +40,19 @@ class TimerTests(unittest.TestCase):
 
 
 class FetcherTests(unittest.TestCase):
+    def test_sync_payload_contains_no_credentials(self) -> None:
+        payload = state_payload(AggregatedQuotaState())
+        self.assertNotIn("token", json.dumps(payload).lower())
+
+    def test_antigravity_reader_uses_explicit_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "usage.json"
+            path.write_text(json.dumps({"models": {}}), encoding="utf-8")
+            reader = AntigravityUsageReader(path)
+            payload, source = reader.read()
+            self.assertEqual(source, "cache")
+            self.assertEqual(payload["models"], {})
+
     def test_copilot_user_quota_snapshots_preserve_models_and_prefer_premium(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "copilot_user_quota.json"
         payload = json.loads(fixture.read_text(encoding="utf-8"))

@@ -17,6 +17,7 @@ CONFIG_PATH = APP_DIR / "config.json"
 @dataclass
 class AntigravityConfig:
     enabled: bool = False
+    local_reader: bool = True
     endpoint_url: str = ""
     session_token: str = ""
     cookies: str = ""
@@ -30,6 +31,14 @@ class GitHubCopilotConfig:
     refresh_interval_sec: int = 300
     endpoint_url: str = "https://api.github.com/copilot_internal/user"
     editor_version: str = "vscode/1.99.0"
+
+
+@dataclass
+class SyncRelayConfig:
+    enabled: bool = False
+    base_url: str = ""
+    auth_token: str = ""
+    interval_sec: int = 300
 
 
 @dataclass
@@ -51,6 +60,7 @@ class AppConfig:
     ui_mode: str = "docked"
     antigravity: AntigravityConfig = field(default_factory=AntigravityConfig)
     github_copilot: GitHubCopilotConfig = field(default_factory=GitHubCopilotConfig)
+    sync_relay: SyncRelayConfig = field(default_factory=SyncRelayConfig)
 
 
 class ConfigManager:
@@ -147,6 +157,10 @@ class ConfigManager:
         config.github_copilot.enabled = bool(config.github_copilot.enabled)
         config.github_copilot.refresh_interval_sec = min(
             3600, max(60, ConfigManager._integer(config.github_copilot.refresh_interval_sec, 300))
+        )
+        config.sync_relay.enabled = bool(config.sync_relay.enabled)
+        config.sync_relay.interval_sec = min(
+            3600, max(60, ConfigManager._integer(config.sync_relay.interval_sec, 300))
         )
 
     @staticmethod

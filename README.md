@@ -10,6 +10,10 @@ Widget desktop ringan untuk memantau rolling quota **5 jam** dan weekly reset me
 - Tray menu: Open, Settings, Force Reset Timer, Exit.
 - Multi-provider monitoring for Google Antigravity and GitHub Copilot with
   independent credentials, intervals, parsing, and offline fallback.
+- When no Antigravity endpoint is configured, the app safely runs
+  `antigravity /usage` with a short timeout and uses an explicit local JSON
+  cache only if the command is unavailable. It does not guess undocumented
+  network endpoints.
 - Antigravity accepts a user-configured endpoint, session token, and cookies.
   GitHub Copilot accepts a GitHub token and sends `Editor-Version` to the
   configured Copilot endpoint. The default internal user endpoint is
@@ -52,6 +56,10 @@ python -c "from config_manager import ConfigManager; ConfigManager().auto_config
 ```
 
 Salin `config.example.json` menjadi `config.json` hanya jika ingin menyiapkan nilai awal manual. Masukkan token melalui Settings. Konfigurasi flat lama (`quota_endpoint`, `session_token`, `cookies`, dan `poll_interval_seconds`) dimigrasikan otomatis ke `antigravity` saat dibaca. Secara default file aktif dibuat otomatis di `%APPDATA%\AIQuotaWidget`. Token disimpan lokal dalam file JSON; jangan membagikan file tersebut.
+
+Optional Cloudflare KV relay setup and the future-client JSON contract are
+documented in `worker/README.md` and `API_CONTRACT.md`. The relay receives only
+normalized quota snapshots and never provider credentials.
 
 ## Build executable Windows (opsional)
 

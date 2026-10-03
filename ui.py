@@ -419,6 +419,12 @@ class QuotaWidget(ctk.CTk):
         self.last_state = state
         ag = state.providers.get("antigravity", ProviderSnapshot("antigravity"))
         gh = state.providers.get("github_copilot", ProviderSnapshot("github_copilot"))
+        if ag.rolling_reset_at:
+            self.engine.rolling_reset_at = ag.rolling_reset_at
+            self.config.rolling_reset_at = ag.rolling_reset_at
+        if ag.weekly_reset_at:
+            self.engine.weekly_override = ag.weekly_reset_at
+            self.config.weekly_reset_override = ag.weekly_reset_at
         enabled = [
             snapshot for snapshot, configured in (
                 (ag, self.config.antigravity.enabled),
